@@ -1,0 +1,6 @@
+export AWS_REGION="us-east-1"
+export STACK_NAME="enterprise-web-platform"
+export ALERT_EMAIL="konissil@gmail.com"
+export KEY_NAME="enterprise-key"
+export MY_IP="$(curl -s ifconfig.me)/32"
+aws sts get-caller-identity --region "$AWS_REGION"
