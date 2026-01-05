@@ -1,2 +1,32 @@
 note.txt
 enterprise-key.pem
+
+# Python cache / compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+
+# Test / coverage
+.pytest_cache/
+.coverage*
+htmlcov/
+
+# Tools
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.ipynb_checkpoints/
+
+# OS / editor junk
+.DS_Store
+.vscode/
+.idea/
+
+# Secrets (only if you use these)
+.env
+.env.*
