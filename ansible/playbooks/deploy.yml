@@ -68,9 +68,9 @@
     #   run_once: true
 
 
-    - name: Show health response
-      ansible.builtin.debug:
-        var: health.content
+    # - name: Show health response
+    #   ansible.builtin.debug:
+    #     var: health.content
 
 
 
