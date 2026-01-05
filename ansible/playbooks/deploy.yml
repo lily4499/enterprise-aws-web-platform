@@ -50,6 +50,8 @@
         journalctl -u app-deploy.service -n 120 --no-pager || true
         echo "=== web root ==="
         ls -lah /var/www/html || true
+      args:
+        executable: /bin/bash
       changed_when: false
       when: deploy_result is failed or (deploy_result.failed | default(false))
 
@@ -58,53 +60,13 @@
         msg: "Deploy service failed. Logs printed above."
       when: deploy_result is failed or (deploy_result.failed | default(false))
 
-    # - name: Health check via ALB (must be 200)
-    #   ansible.builtin.uri:
-    #     url: "http://{{ alb_dns }}/health"
-    #     status_code: 200
-    #     return_content: true
-    #   register: health
-    #   delegate_to: localhost
-    #   run_once: true
-
-
-    # - name: Show health response
-    #   ansible.builtin.debug:
-    #     var: health.content
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
 # - name: Rolling deploy web artifact
 #   hosts: all
 #   become: true
-
-#   vars:
-#     web_root: /var/www/html
-#     env_file: /etc/app/env
-#     artifact_key_file: /etc/app/artifact_key
+#   serial: 1
 
 #   tasks:
 #     - name: Fail if variables are missing
@@ -114,11 +76,11 @@
 #           - artifact_bucket | length > 0
 #           - artifact_key is defined
 #           - artifact_key | length > 0
-#         fail_msg: "artifact_bucket and artifact_key must be provided."
+#         fail_msg: "Pass -e artifact_bucket=... -e artifact_key=..."
 
-#     - name: Write env file used by deploy service
+#     - name: Write env file used by deploy service (MUST be ARTIFACT_BUCKET)
 #       ansible.builtin.copy:
-#         dest: "{{ env_file }}"
+#         dest: /etc/app/env
 #         owner: root
 #         group: root
 #         mode: "0644"
@@ -127,7 +89,7 @@
 
 #     - name: Set artifact key
 #       ansible.builtin.copy:
-#         dest: "{{ artifact_key_file }}"
+#         dest: /etc/app/artifact_key
 #         owner: root
 #         group: root
 #         mode: "0644"
@@ -143,16 +105,16 @@
 
 #     - name: Show deploy logs if deploy failed
 #       ansible.builtin.shell: |
-#         echo "=== systemctl status ==="
+#         echo "=== env ==="
+#         cat /etc/app/env || true
+#         echo "=== key ==="
+#         cat /etc/app/artifact_key || true
+#         echo "=== systemctl ==="
 #         systemctl status app-deploy.service --no-pager -l || true
 #         echo "=== journalctl ==="
 #         journalctl -u app-deploy.service -n 120 --no-pager || true
-#         echo "=== env/artifact ==="
-#         cat /etc/app/env || true
-#         echo "---"
-#         cat /etc/app/artifact_key || true
 #         echo "=== web root ==="
-#         ls -lah {{ web_root }} || true
+#         ls -lah /var/www/html || true
 #       changed_when: false
 #       when: deploy_result is failed or (deploy_result.failed | default(false))
 
@@ -161,21 +123,19 @@
 #         msg: "Deploy service failed. Logs printed above."
 #       when: deploy_result is failed or (deploy_result.failed | default(false))
 
-#     - name: Health check on instance
-#       ansible.builtin.uri:
-#         url: "http://127.0.0.1/health"
-#         return_content: true
-#       register: health
-
-#     - name: Show health response
-#       ansible.builtin.debug:
-#         var: health.content
-
+#     # - name: Health check via ALB (must be 200)
+#     #   ansible.builtin.uri:
+#     #     url: "http://{{ alb_dns }}/health"
+#     #     status_code: 200
+#     #     return_content: true
+#     #   register: health
+#     #   delegate_to: localhost
+#     #   run_once: true
 
 
-
-
-
+#     # - name: Show health response
+#     #   ansible.builtin.debug:
+#     #     var: health.content
 
 
 
@@ -195,55 +155,160 @@
 
 
 
-# ---
-# - name: Rolling deploy web artifact
-#   hosts: all
-#   become: true
-#   serial: 1
 
-#   vars:
-#     artifact_bucket: ""
-#     artifact_key: ""
 
-#   tasks:
-#     - name: Fail if variables are missing
-#       ansible.builtin.assert:
-#         that:
-#           - artifact_bucket | length > 0
-#           - artifact_key | length > 0
-#         fail_msg: "Pass -e artifact_bucket=... -e artifact_key=..."
 
-#     - name: Write env file used by deploy service
-#       ansible.builtin.copy:
-#         dest: /etc/app/env
-#         owner: root
-#         group: root
-#         mode: "0644"
-#         content: |
-#           artifact_bucket={{ artifact_bucket }}
 
-#     - name: Set artifact key
-#       ansible.builtin.copy:
-#         dest: /etc/app/artifact_key
-#         owner: root
-#         group: root
-#         mode: "0644"
-#         content: "{{ artifact_key }}"
 
-#     - name: Run deploy service
-#       ansible.builtin.systemd:
-#         name: app-deploy.service
-#         state: restarted
-#         daemon_reload: true
 
-#     - name: Health check on instance
-#       ansible.builtin.uri:
-#         url: "http://127.0.0.1/health"
-#         return_content: true
-#       register: health
 
-#     - name: Show health response
-#       ansible.builtin.debug:
-#         var: health.content
+# # - name: Rolling deploy web artifact
+# #   hosts: all
+# #   become: true
+
+# #   vars:
+# #     web_root: /var/www/html
+# #     env_file: /etc/app/env
+# #     artifact_key_file: /etc/app/artifact_key
+
+# #   tasks:
+# #     - name: Fail if variables are missing
+# #       ansible.builtin.assert:
+# #         that:
+# #           - artifact_bucket is defined
+# #           - artifact_bucket | length > 0
+# #           - artifact_key is defined
+# #           - artifact_key | length > 0
+# #         fail_msg: "artifact_bucket and artifact_key must be provided."
+
+# #     - name: Write env file used by deploy service
+# #       ansible.builtin.copy:
+# #         dest: "{{ env_file }}"
+# #         owner: root
+# #         group: root
+# #         mode: "0644"
+# #         content: |
+# #           ARTIFACT_BUCKET={{ artifact_bucket }}
+
+# #     - name: Set artifact key
+# #       ansible.builtin.copy:
+# #         dest: "{{ artifact_key_file }}"
+# #         owner: root
+# #         group: root
+# #         mode: "0644"
+# #         content: "{{ artifact_key }}"
+
+# #     - name: Restart deploy service
+# #       ansible.builtin.systemd:
+# #         name: app-deploy.service
+# #         state: restarted
+# #         daemon_reload: true
+# #       register: deploy_result
+# #       failed_when: false
+
+# #     - name: Show deploy logs if deploy failed
+# #       ansible.builtin.shell: |
+# #         echo "=== systemctl status ==="
+# #         systemctl status app-deploy.service --no-pager -l || true
+# #         echo "=== journalctl ==="
+# #         journalctl -u app-deploy.service -n 120 --no-pager || true
+# #         echo "=== env/artifact ==="
+# #         cat /etc/app/env || true
+# #         echo "---"
+# #         cat /etc/app/artifact_key || true
+# #         echo "=== web root ==="
+# #         ls -lah {{ web_root }} || true
+# #       changed_when: false
+# #       when: deploy_result is failed or (deploy_result.failed | default(false))
+
+# #     - name: Fail if deploy service failed
+# #       ansible.builtin.fail:
+# #         msg: "Deploy service failed. Logs printed above."
+# #       when: deploy_result is failed or (deploy_result.failed | default(false))
+
+# #     - name: Health check on instance
+# #       ansible.builtin.uri:
+# #         url: "http://127.0.0.1/health"
+# #         return_content: true
+# #       register: health
+
+# #     - name: Show health response
+# #       ansible.builtin.debug:
+# #         var: health.content
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # ---
+# # - name: Rolling deploy web artifact
+# #   hosts: all
+# #   become: true
+# #   serial: 1
+
+# #   vars:
+# #     artifact_bucket: ""
+# #     artifact_key: ""
+
+# #   tasks:
+# #     - name: Fail if variables are missing
+# #       ansible.builtin.assert:
+# #         that:
+# #           - artifact_bucket | length > 0
+# #           - artifact_key | length > 0
+# #         fail_msg: "Pass -e artifact_bucket=... -e artifact_key=..."
+
+# #     - name: Write env file used by deploy service
+# #       ansible.builtin.copy:
+# #         dest: /etc/app/env
+# #         owner: root
+# #         group: root
+# #         mode: "0644"
+# #         content: |
+# #           artifact_bucket={{ artifact_bucket }}
+
+# #     - name: Set artifact key
+# #       ansible.builtin.copy:
+# #         dest: /etc/app/artifact_key
+# #         owner: root
+# #         group: root
+# #         mode: "0644"
+# #         content: "{{ artifact_key }}"
+
+# #     - name: Run deploy service
+# #       ansible.builtin.systemd:
+# #         name: app-deploy.service
+# #         state: restarted
+# #         daemon_reload: true
+
+# #     - name: Health check on instance
+# #       ansible.builtin.uri:
+# #         url: "http://127.0.0.1/health"
+# #         return_content: true
+# #       register: health
+
+# #     - name: Show health response
+# #       ansible.builtin.debug:
+# #         var: health.content
 
 
