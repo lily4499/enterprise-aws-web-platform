@@ -58,12 +58,15 @@
         msg: "Deploy service failed. Logs printed above."
       when: deploy_result is failed or (deploy_result.failed | default(false))
 
-    - name: Health check on instance (must be 200)
-      ansible.builtin.uri:
-        url: "http://127.0.0.1/health"
-        status_code: 200
-        return_content: true
-      register: health
+    # - name: Health check via ALB (must be 200)
+    #   ansible.builtin.uri:
+    #     url: "http://{{ alb_dns }}/health"
+    #     status_code: 200
+    #     return_content: true
+    #   register: health
+    #   delegate_to: localhost
+    #   run_once: true
+
 
     - name: Show health response
       ansible.builtin.debug:

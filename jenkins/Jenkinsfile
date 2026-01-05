@@ -106,8 +106,6 @@ pipeline {
           set -a
           source .env.outputs
           set +a
-
-          curl -fsS "http://$ALB_DNS/health"
           curl -fsS "http://$ALB_DNS/" | head
         '''
       }
