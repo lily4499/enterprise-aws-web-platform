@@ -1,0 +1,11 @@
+[Unit]
+Description=Deploy web artifact from S3 to /var/www/html
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/app-deploy.sh
+
+[Install]
+WantedBy=multi-user.target

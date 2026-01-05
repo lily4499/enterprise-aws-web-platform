@@ -1,0 +1,13 @@
+ansible_user: ubuntu
+ansible_ssh_private_key_file: /home/lilia/devops-projects/enterprise-aws-web-platform/enterprise-key.pem
+ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+
+
+
+# # ansible/group_vars/all.yml
+# ansible_user: ubuntu
+
+# # If you want to SSH directly from your laptop:
+# # ansible_ssh_private_key_file: ../enterprise-key.pem
+
+# # If you run Ansible on a Jenkins agent in the same VPC, use private IPs (recommended).

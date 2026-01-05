@@ -1,0 +1,78 @@
+pipeline {
+  agent any
+
+  environment {
+    AWS_REGION   = 'us-east-1'
+    STACK_NAME   = 'enterprise-web-platform'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Discover outputs') {
+      steps {
+        sh '''
+          set -e
+          OUT=$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs" --output json)
+          export ARTIFACT_BUCKET=$(echo "$OUT" | jq -r '.[] | select(.OutputKey=="ArtifactBucket") | .OutputValue')
+          export ALB_DNS=$(echo "$OUT" | jq -r '.[] | select(.OutputKey=="AlbDnsName") | .OutputValue')
+          echo "ARTIFACT_BUCKET=$ARTIFACT_BUCKET" > .env.outputs
+          echo "ALB_DNS=$ALB_DNS" >> .env.outputs
+        '''
+      }
+    }
+
+    stage('Build artifact') {
+      steps {
+        sh '''
+          set -e
+          set -a
+          source .env.outputs
+          set +a
+          cd app
+          BUILD_NUMBER="$BUILD_NUMBER" bash build.sh
+        '''
+      }
+    }
+
+    stage('Upload to S3') {
+      steps {
+        sh '''
+          set -e
+          set -a
+          source .env.outputs
+          set +a
+          aws s3 cp app/dist/app.tar.gz "s3://$ARTIFACT_BUCKET/releases/app-$BUILD_NUMBER.tar.gz" --region "$AWS_REGION"
+        '''
+      }
+    }
+
+    stage('Deploy via Ansible') {
+      steps {
+        sh '''
+          set -e
+          set -a
+          source .env.outputs
+          set +a
+          cd ansible
+          ansible-playbook -i inventory/aws_ec2.yml playbooks/deploy.yml             -e "artifact_bucket=$ARTIFACT_BUCKET"             -e "artifact_key=releases/app-$BUILD_NUMBER.tar.gz"
+        '''
+      }
+    }
+
+    stage('Smoke test (ALB)') {
+      steps {
+        sh '''
+          set -e
+          set -a
+          source .env.outputs
+          set +a
+          curl -fsS "http://$ALB_DNS/health"
+          curl -fsS "http://$ALB_DNS/" | head
+        '''
+      }
+    }
+  }
+}

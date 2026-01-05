@@ -3,4 +3,182 @@ export STACK_NAME="enterprise-web-platform"
 export ALERT_EMAIL="konissil@gmail.com"
 export KEY_NAME="enterprise-key"
 export MY_IP="$(curl -s ifconfig.me)/32"
+export INSTANCE_TYPE="t3.micro"
+
+export ARTIFACT_BUCKET="enterprise-web-platform-artifactbucket-f5gwvdzx4nlx"
+
+export AMI_ID="ami-0b34e793dfb1abb14"
+
+
 aws sts get-caller-identity --region "$AWS_REGION"
+
+
+export ARTIFACT_BUCKET="$(aws cloudformation describe-stacks \
+  --region "$AWS_REGION" \
+  --stack-name "$STACK_NAME" \
+  --query "Stacks[0].Outputs[?OutputKey=='ArtifactBucket'].OutputValue" \
+  --output text)"
+
+echo "BUCKET: $ARTIFACT_BUCKET"
+
+
+
+
+
+aws cloudformation delete-stack --stack-name "$STACK_NAME"
+aws s3 rm "s3://$ARTIFACT_BUCKET" --recursive
+aws s3api delete-bucket --bucket "$ARTIFACT_BUCKET"
+aws ec2 delete-key-pair --key-name "$KEY_NAME"
+rm -f enterprise-key.pem
+
+
+aws ec2 deregister-image --region "$REGION" --image-id "$AMI_ID"
+aws ec2 describe-images --region "$REGION" --image-ids "$AMI_ID" \
+  --query "Images[0].BlockDeviceMappings[].Ebs.SnapshotId" \
+  --output text
+
+
+
+aws cloudformation deploy \
+  --region "$AWS_REGION" \
+  --stack-name "$STACK_NAME" \
+  --template-file main.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    AmiId="$AMI_ID" \
+    InstanceType="$INSTANCE_TYPE" \
+    KeyName="$KEY_NAME" \
+    AlertEmail="$ALERT_EMAIL" \
+    MyIpCidr="$MY_IP"
+
+
+
+
+Dashboard:
+  Type: AWS::CloudWatch::Dashboard
+  Properties:
+    DashboardName: !Sub "${AWS::StackName}-dashboard"
+    DashboardBody: !Sub |
+      {
+        "widgets": [
+          {
+            "type": "metric",
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "region": "${AWS::Region}",
+              "title": "ALB RequestCount",
+              "view": "timeSeries",
+              "stacked": false,
+              "period": 60,
+              "stat": "Sum",
+              "metrics": [
+                [ "AWS/ApplicationELB", "RequestCount", "LoadBalancer", "${LoadBalancerFullName}" ]
+              ],
+              "annotations": {
+                "horizontal": []
+              }
+            }
+          }
+        ]
+      }
+
+
+
+
+
+
+
+Build a new AMI with Packer (packer/web-ami.pkr.hcl)
+
+Find the AMI ID automatically (by the exact AMI name it just created)
+
+Deploy / update CloudFormation (infra/cloudformation/main.yaml) with the new AMI ID
+
+Force ASG to roll to the new AMI (Instance Refresh)
+
+Test ALB (/health and /) so you confirm the 403 is gone
+
+1) Create file: deploy.sh at repo root
+
+2) Make it executable + run it
+cd ~/devops-projects/enterprise-aws-web-platform
+chmod +x deploy.sh
+
+export AWS_REGION=us-east-1
+export ALERT_EMAIL="konissil@gmail.com"
+
+./deploy.sh
+
+
+---------------------------------------------------
+
+
+fix 404
+Phase 1 — Immediate fix (on this EC2 instance)
+sudo sed -i 's#root /var/www/html/dist;#root /var/www/html;#' /etc/nginx/sites-available/default
+sudo nginx -t
+sudo systemctl restart nginx
+
+
+fix 403
+
+2) Quick working fix (guaranteed): restore readable web root + index
+A) Ensure correct permissions and ownership
+sudo chown -R www-data:www-data /var/www/html
+sudo chmod -R 755 /var/www/html
+
+B) Create a simple index.html (so / has something)
+echo "<h1>✅ Nginx is working on $(hostname)</h1>" | sudo tee /var/www/html/index.html
+sudo chown www-data:www-data /var/www/html/index.html
+sudo chmod 644 /var/www/html/index.html
+
+C) Restart nginx and test
+sudo systemctl restart nginx
+curl -i http://127.0.0.1/ | head -25
+
+
+If this returns 200 OK, your ALB / will also work.
+
+
+
+
+
+
+
+
+
+
+
+Dashboard:
+  Type: AWS::CloudWatch::Dashboard
+  Properties:
+    DashboardName: !Sub "${AWS::StackName}-dashboard"
+    DashboardBody:
+      Fn::Sub:
+        - |
+          {
+            "widgets": [
+              {
+                "type": "metric",
+                "x": 0,
+                "y": 0,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "region": "${AWS::Region}",
+                  "title": "ALB RequestCount",
+                  "view": "timeSeries",
+                  "period": 60,
+                  "stat": "Sum",
+                  "metrics": [
+                    [ "AWS/ApplicationELB", "RequestCount", "LoadBalancer", "${AlbFullName}" ]
+                  ],
+                  "annotations": { "horizontal": [] }
+                }
+              }
+            ]
+          }
+        - AlbFullName: !GetAtt LoadBalancer.LoadBalancerFullName
