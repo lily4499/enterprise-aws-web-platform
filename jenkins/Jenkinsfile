@@ -2,73 +2,111 @@ pipeline {
   agent any
 
   environment {
-    AWS_REGION   = 'us-east-1'
-    STACK_NAME   = 'enterprise-web-platform'
+    AWS_REGION = 'us-east-1'
+    STACK_NAME = 'enterprise-web-platform'
   }
 
   stages {
+
     stage('Checkout') {
-      steps { checkout scm }
+      steps {
+        git branch: 'main', url: 'https://github.com/lily4499/enterprise-aws-web-platform.git'
+      }
     }
 
     stage('Discover outputs') {
       steps {
-        sh '''
-          set -e
-          OUT=$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs" --output json)
-          export ARTIFACT_BUCKET=$(echo "$OUT" | jq -r '.[] | select(.OutputKey=="ArtifactBucket") | .OutputValue')
-          export ALB_DNS=$(echo "$OUT" | jq -r '.[] | select(.OutputKey=="AlbDnsName") | .OutputValue')
+        sh '''#!/usr/bin/env bash
+          set -euo pipefail
+
+          OUT=$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs" \
+            --output json)
+
+          ARTIFACT_BUCKET=$(echo "$OUT" | jq -r '.[] | select(.OutputKey=="ArtifactBucket") | .OutputValue')
+          ALB_DNS=$(echo "$OUT" | jq -r '.[] | select(.OutputKey=="AlbDnsName") | .OutputValue')
+
           echo "ARTIFACT_BUCKET=$ARTIFACT_BUCKET" > .env.outputs
           echo "ALB_DNS=$ALB_DNS" >> .env.outputs
+
+          echo "Saved outputs:"
+          cat .env.outputs
         '''
       }
     }
 
     stage('Build artifact') {
       steps {
-        sh '''
-          set -e
+        sh '''#!/usr/bin/env bash
+          set -euo pipefail
           set -a
           source .env.outputs
           set +a
+
           cd app
-          BUILD_NUMBER="$BUILD_NUMBER" bash build.sh
+          chmod +x build.sh
+          BUILD_NUMBER="$BUILD_NUMBER" bash ./build.sh
         '''
       }
     }
 
     stage('Upload to S3') {
       steps {
-        sh '''
-          set -e
+        sh '''#!/usr/bin/env bash
+          set -euo pipefail
           set -a
           source .env.outputs
           set +a
-          aws s3 cp app/dist/app.tar.gz "s3://$ARTIFACT_BUCKET/releases/app-$BUILD_NUMBER.tar.gz" --region "$AWS_REGION"
+
+          aws s3 cp app/dist/app.tar.gz \
+            "s3://$ARTIFACT_BUCKET/releases/app-$BUILD_NUMBER.tar.gz" \
+            --region "$AWS_REGION"
         '''
       }
     }
 
     stage('Deploy via Ansible') {
       steps {
-        sh '''
-          set -e
-          set -a
-          source .env.outputs
-          set +a
-          cd ansible
-          ansible-playbook -i inventory/aws_ec2.yml playbooks/deploy.yml             -e "artifact_bucket=$ARTIFACT_BUCKET"             -e "artifact_key=releases/app-$BUILD_NUMBER.tar.gz"
-        '''
+        withCredentials([sshUserPrivateKey(
+          credentialsId: 'enterprise-ssh-key',
+          keyFileVariable: 'SSH_KEY',
+          usernameVariable: 'SSH_USER'
+        )]) {
+          sh '''#!/usr/bin/env bash
+            set -euo pipefail
+
+            echo "PWD=$(pwd)"
+            echo "WORKSPACE=${WORKSPACE}"
+            ls -la "${WORKSPACE}"
+            test -f "${WORKSPACE}/.env.outputs"
+
+            set -a
+            source "${WORKSPACE}/.env.outputs"
+            set +a
+
+            cd "${WORKSPACE}/ansible"
+
+            ansible-playbook -i inventory/aws_ec2.yml playbooks/deploy.yml \
+              --private-key "$SSH_KEY" -u "$SSH_USER" \
+              -e "artifact_bucket=$ARTIFACT_BUCKET" \
+              -e "artifact_key=releases/app-$BUILD_NUMBER.tar.gz"
+          '''
+        }
       }
     }
 
+
+
     stage('Smoke test (ALB)') {
       steps {
-        sh '''
-          set -e
+        sh '''#!/usr/bin/env bash
+          set -euo pipefail
           set -a
           source .env.outputs
           set +a
+
           curl -fsS "http://$ALB_DNS/health"
           curl -fsS "http://$ALB_DNS/" | head
         '''
